@@ -7,15 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Reference Include="ArgumentParser">
       <HintPath>..\..\ArgumentParser\ArgumentParser\bin\Debug\net8.0\ArgumentParser.dll</HintPath>
     </Reference>
-    <Reference Include="SingleInstanceApp">
-      <HintPath>..\..\SingleInstanceApp\SingleInstanceApp\bin\Debug\net8.0\SingleInstanceApp.dll</HintPath>
+    <Reference Include="SingleInstanceProgram">
+      <HintPath>..\..\SingleInstanceProgram\SingleInstanceProgram\bin\Debug\net8.0\SingleInstanceProgram.dll</HintPath>
     </Reference>
   </ItemGroup>
 
