@@ -1,9 +1,9 @@
 using SingleInstanceProgramNS;
 using ArgumentParserNS;
-using System.Net;
 using System.Text;
+using System.Dynamic;
 
-SingleInstanceProgram s = SingleInstanceProgram.GetInstance("UniqueId", args);
+SingleInstanceProgram s = SingleInstanceProgram.Create("UniqueId", args);
 ArgumentParser argparse = new ArgumentParser();
 
 argparse.AddArgument("command")
@@ -29,39 +29,84 @@ argparse.AddArgument("--print-cache")
 
 IDictionary<string,CachedResponse> cache = new Dictionary<string,CachedResponse>();
 WebApplication? app = null;
-void s_MessageReceived(object? sender, MessageReceivedEventArgs e)
+async void s_MessageReceivedFromOtherInstance(object? sender,  MessageReceivedEventArgs e)
 {
     if (e.Message != null)
     {
-        processArguments(e.Message);
+        string[] response = (await processArguments(e.Message)).Split('\n');
+        e.RespondToOtherSender?.Invoke(response);
     }
 }
 
-s.MessageReceived += s_MessageReceived;
-processArguments(args);
-//processArguments("start -o 127.0.0.1:5064 -p 2121".Split());
+void s_MessageReceivedFromFirstInstance(object? sender, MessageReceivedEventArgs e)
+{
+    if(e.Message != null)
+    {
+        foreach(string s in e.Message)
+        {
+            Console.WriteLine(s);
+        }
+    }
+}
 
-async void processArguments(string[] args)
+
+
+s.MessageReceivedFromOtherInstance += s_MessageReceivedFromOtherInstance;
+s.MessageReceivedFromFirstInstance += s_MessageReceivedFromFirstInstance;
+s.Start();
+
+#if DEBUG
+Console.WriteLine(processArguments("start -o 127.0.0.1:5064 -p 2121".Split()));
+#else
+Console.WriteLine(processArguments(args));
+#endif
+
+
+async Task<string> processArguments(string[] args)
 {
     dynamic expando = argparse.ArgParse(args);
+
+    if(ArgumentParser.HasProperty(expando, "err_msg"))
+    {
+        return $"{expando.err_msg}\n{argparse.GetHelpMessage()}\nTo use the app, either use 'server start -p <port> -o <origin-ip>' 'server stop' 'server --clear-cache' 'server --print-cache'";
+    }
+
     if(expando.clear_cache == true)
     {
-        cache.Clear();
-        return;
+        try
+        {
+            cache.Clear();
+            return "Cleared the Cache";
+        }
+        catch
+        {
+            return "Failed to clear the cache";
+        }
+        
     }
 
     if (expando.print_cache == true)
     {
-        int i = 0;
-        foreach (KeyValuePair<string, CachedResponse> k in cache)
+        try
         {
-            Console.WriteLine($"Entry {i}:\t{k.Key}");
-            Console.WriteLine(k.Value.ToString());
-            Console.WriteLine("-----------------------------------------------------------------");
-            i++;
-        }
+            StringBuilder sb = new StringBuilder();
+            int i = 0;
+            foreach (KeyValuePair<string, CachedResponse> k in cache)
+            {
+                sb.Append($"Entry {i}:\t{k.Key}\n");
+                sb.Append(k.Value.ToString() + "\n");
+                sb.Append("-----------------------------------------------------------------\n");
+                i++;
+            }
 
-        return;
+            Console.WriteLine(sb.ToString());
+            return sb.ToString();
+        }
+        catch
+        {
+            return "Encountered an error while getting the cache.";
+        }
+        
     }
 
     if (ArgumentParser.HasProperty(expando,"command"))
@@ -69,28 +114,26 @@ async void processArguments(string[] args)
         if(expando.command == "start" && ArgumentParser.HasProperty(expando, "port") && ArgumentParser.HasProperty(expando, "origin"))
         {
             StartServer(expando.port, expando.origin);
+            return "Started the server...";
         }
         else if (expando.command == "stop")
         {
             if (app != null)
             {
-                Console.WriteLine("Shutting down...");
                 await app.StopAsync();
+                return "Shutting down the server...";
             }
             else
             {
-                Console.WriteLine("The server isn't running");
+                return "The server isn't running";
             }
         }
-        else
-        {
-            Console.WriteLine("Unknown command");
-        }
-        return;
+
+        return "unknown command";
     }
     else
     {
-        Console.WriteLine("To use the app, either use 'server start -p <port> -o <origin-ip>' 'server stop' 'server --clear-cache'");
+        return "To use the app, either use 'server start -p <port> -o <origin-ip>' 'server stop' 'server --clear-cache' 'server --print-cache'";
     }
 }
 
@@ -102,7 +145,7 @@ void StartServer(int port, string originIP)
 
     builder.WebHost.ConfigureKestrel((context, serverOptions) =>
     {
-        serverOptions.Listen(IPAddress.Any, port);
+        serverOptions.Listen(System.Net.IPAddress.Any, port);
     });
 
     app = builder.Build();
